@@ -6,7 +6,7 @@ using PUnits, Uncertainty
 import Base: promote_rule, convert, show, sqrt, +, *, -, /, ^, .*, ./, .^, ==, getindex, setindex!, size, ndims, endof, length, isapprox,
 <, >, >=, <=, .!=, .==, .<, .>, .>=, .<=
 
-typealias QValue  Union{Number, AbstractArray, Uncertain} # things that go inside a Quantity
+const QValue = Union{Number, AbstractArray, Uncertain} # things that go inside a Quantity
 # Quantity is where most of the action happens
 # Quantity combines a value with some units
 # Quantities can be reduced to base units via asbase, which uses the UnitSytem Dict
@@ -90,8 +90,8 @@ function .*{T,S}(x::Quantity{T}, y::Quantity{S})
     yp,yu = remove_prefix(y.unit)
     Quantity_(xp*yp*(x.value.*y.value), xu*yu)
 end
-.*(x::Quantity, y::QValue) = Quantity_(x.value.*y, x.unit)
-.*(x::QValue, y::Quantity) = y.*x
+function Base.broadcast(::typeof(*), x::Quantity, y::QValue) = Quantity_(x.value.*y, x.unit)
+function Base.broadcast(::typeof(*), x::QValue, y::Quantity) = y.*x
 function /{T,S}(x::Quantity{T}, y::Quantity{S})
     xp,xu = remove_prefix(x.unit)
     yp,yu = remove_prefix(y.unit)
@@ -104,19 +104,27 @@ function ./{T,S}(x::Quantity{T}, y::Quantity{S})
     yp,yu = remove_prefix(y.unit)
     Quantity_((xp/yp)*(x.value./y.value), xu/yu)
 end
-./(x::Quantity, y::QValue) = Quantity_(x.value./y, x.unit)
-./(x::QValue, y::Quantity) = Quantity_(x/y.value, y.unit^-1)
+function Base.broadcast(::typeof(/), (x::Quantity, y::QValue) = Quantity_(x.value./y, x.unit)
+function Base.broadcast(::typeof(/), x::QValue, y::Quantity) = Quantity_(x/y.value, y.unit^-1)
 +{T,S}(x::Quantity{T}, y::Quantity{S}) = Quantity_(x.value + as(y,x).value, x.unit)
 -{T,S}(x::Quantity{T}, y::Quantity{S}) = Quantity_(x.value - as(y,x).value, x.unit)
 -{T}(x::Quantity{T}) = Quantity_(-x.value, x.unit)
 ^{T}(x::Quantity{T}, y::Rational) = Quantity_(x.value^convert(AbstractFloat,y), x.unit^convert(AbstractFloat,y))
 ^{T}(x::Quantity{T}, y::Integer) = Quantity_(x.value^convert(AbstractFloat,y), x.unit^convert(AbstractFloat,y))
 ^{T}(x::Quantity{T}, y::Number) = Quantity_(x.value^convert(AbstractFloat,y), x.unit^convert(AbstractFloat,y))
-.^{T}(x::Quantity{T}, y::Rational) = Quantity_(x.value.^convert(AbstractFloat,y), x.unit.^convert(AbstractFloat,y))
-.^{T}(x::Quantity{T}, y::Integer) = Quantity_(x.value.^convert(AbstractFloat,y), x.unit.^convert(AbstractFloat,y))
-.^{T}(x::Quantity{T}, y::Number) = Quantity_(x.value.^convert(AbstractFloat,y), x.unit.^convert(AbstractFloat,y))
-for f in (:(==), :<, :>, :>=, :<=, :!=, :(.==), :.<, :.>, :.>=, :.<=, :.!=, :isapprox)
+function Base.broadcast(::typeof(^),{T}(x::Quantity{T}, y::Rational) = Quantity_(x.value.^convert(AbstractFloat,y), x.unit.^convert(AbstractFloat,y))
+function Base.broadcast(::typeof(^),{T}(x::Quantity{T}, y::Integer) = Quantity_(x.value.^convert(AbstractFloat,y), x.unit.^convert(AbstractFloat,y))
+function Base.broadcast(::typeof(^),{T}(x::Quantity{T}, y::Number) = Quantity_(x.value.^convert(AbstractFloat,y), x.unit.^convert(AbstractFloat,y))
+for f in (:(==), :<, :>, :>=, :<=, :!=, :isapprox)
     @eval begin function ($f)(x::Quantity, y::Quantity)
+                    a = asbase(x)
+                    b = asbase(y)
+                    assert(a.unit == b.unit)
+                    ($f)(a.value,b.value)
+                end end
+end
+for f in (:(==), :<, :>, :>=, :<=, :!=)
+    @eval begin function Base.broadcast(::typeof($f), (x::Quantity, y::Quantity)
                     a = asbase(x)
                     b = asbase(y)
                     assert(a.unit == b.unit)
